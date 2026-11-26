@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MemeBoard da Alice — Soundboard de Memes</title>
+
+    <!-- Tailwind CSS via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts: Inter e Fredoka -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Fredoka', 'Inter', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Estilo 3D tátil para os pads do soundboard */
+        .sound-pad {
+            background: linear-gradient(155deg, var(--pad-light) 0%, var(--pad-main) 52%, var(--pad-dark) 100%);
+            box-shadow:
+                0 8px 0 var(--pad-shadow),
+                0 14px 22px -6px var(--pad-glow),
+                inset 0 3px 8px rgba(255, 255, 255, 0.35),
+                inset 0 -5px 10px rgba(0, 0, 0, 0.22);
+            transition: transform 0.08s cubic-bezier(0.34, 1.56, 0.64, 1),
+                        box-shadow 0.08s cubic-bezier(0.34, 1.56, 0.64, 1),
+                        filter 0.15s ease;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+
+        .sound-pad:hover {
+            filter: brightness(1.05);
+        }
+
+        .sound-pad:active,
+        .sound-pad.is-pressed {
+            transform: translateY(6px) scale(0.98);
+            box-shadow:
+                0 2px 0 var(--pad-shadow),
+                0 6px 12px -4px var(--pad-glow),
+                inset 0 2px 6px rgba(255, 255, 255, 0.25),
+                inset 0 -2px 6px rgba(0, 0, 0, 0.28);
+        }
+
+        /* Animação de pulso sutil enquanto o áudio do pad está tocando */
+        @keyframes padGlowPulse {
+            0%, 100% {
+                outline: 3px solid rgba(255, 255, 255, 0.0);
+            }
+            50% {
+                outline: 3px solid rgba(255, 255, 255, 0.65);
+            }
+        }
+
+        .sound-pad.is-playing {
+            animation: padGlowPulse 0.7s ease-in-out infinite;
+        }
+
+        /* Partícula flutuante ao disparar um som */
+        @keyframes popFloat {
+            0% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(0.6) rotate(var(--rot));
+            }
+            60% {
+                opacity: 1;
+                transform: translate(calc(-50% + var(--tx) * 0.7), calc(-50% + var(--ty) * 0.7)) scale(1.1) rotate(var(--rot));
+            }
+            100% {
+                opacity: 0;
+                transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(0.85) rotate(var(--rot));
+            }
+        }
+
+        .pop-particle {
+            animation: popFloat 0.75s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+            pointer-events: none;
+        }
+
+        /* Estilização do slider de volume */
+        input[type="range"].volume-slider {
+            accent-color: #f43f5e;
+        }
+    </style>
+</head>
+<body class="min-h-screen w-full overflow-x-hidden bg-gradient-to-br from-rose-50 via-amber-50/60 to-indigo-50 dark:from-slate-950 dark:via-slate-900 dark:to-rose-950/30 text-slate-800 dark:text-slate-100 flex flex-col items-center justify-between p-4 sm:p-6 transition-colors duration-300">
+
+    <!-- Cabeçalho -->
+    <header class="w-full max-w-5xl text-center pt-2 sm:pt-4">
+        <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-rose-200/70 dark:border-rose-800/50 shadow-sm mb-3">
+            <span class="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+            <span class="text-xs font-semibold uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                10 Memes Clássicos • BigSoundBank &amp; MyInstants
+            </span>
+        </div>
+
+        <h1 class="font-display text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight text-slate-900 dark:text-white drop-shadow-sm">
+            Meme<span class="text-rose-600 dark:text-rose-400">Board</span> da Alice
+        </h1>
+        <p class="mt-2 text-sm sm:text-base text-slate-600 dark:text-slate-300 max-w-2xl mx-auto">
+            Do lendário <strong>Botão Fá</strong> aos maiores efeitos sonoros da internet! Clique nos pads ou use as teclas
+            <kbd class="px-1.5 py-0.5 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md shadow-sm">1</kbd>–<kbd class="px-1.5 py-0.5 text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-md shadow-sm">0</kbd>.
+        </p>
+    </header>
+
+    <!-- Barra de Controles do Soundboard -->
+    <section aria-label="Controles do soundboard" class="w-full max-w-5xl mt-5">
+        <div class="bg-white/80 dark:bg-slate-800/80 backdrop-blur-md border border-slate-200/80 dark:border-slate-700/80 rounded-2xl shadow-sm p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3">
+            <!-- Contador total -->
+            <div class="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-rose-50/90 dark:bg-rose-950/40 border border-rose-200/60 dark:border-rose-800/40">
+                <span class="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300">Total tocado:</span>
+                <span id="total-counter" class="font-display text-lg sm:text-xl font-bold text-rose-600 dark:text-rose-400 tabular-nums">0</span>
+            </div>
+
+            <!-- Controles de Volume, Sobreposição e Parar Tudo -->
+            <div class="flex flex-wrap items-center gap-3 sm:gap-4">
+                <!-- Volume -->
+                <label class="flex items-center gap-2 text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-300">
+                    <span aria-hidden="true">🔊</span>
+                    <span class="sr-only">Volume</span>
+                    <input
+                        id="volume-slider"
+                        type="range"
+                        min="0"
+                        max="100"
+                        value="100"
+                        class="volume-slider w-24 sm:w-28 cursor-pointer"
+                    >
+                    <span id="volume-label" class="w-9 text-right tabular-nums text-xs font-semibold text-slate-500 dark:text-slate-400">100%</span>
+                </label>
+
+                <!-- Toggle de Sobreposição -->
+                <label class="inline-flex items-center gap-2 cursor-pointer select-none px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700">
+                    <input id="overlap-toggle" type="checkbox" checked class="w-4 h-4 rounded accent-rose-600 cursor-pointer">
+                    <span class="text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-200">Sobrepor sons</span>
+                </label>
+
+                <!-- Botão Parar Tudo -->
+                <button
+                    id="stop-all-btn"
+                    type="button"
+                    class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-xs sm:text-sm font-semibold shadow-sm active:scale-95 transition cursor-pointer"
+                    title="Parar todos os sons (tecla Esc)"
+                >
+                    <span aria-hidden="true">⏹️</span>
+                    <span>Parar Tudo</span>
+                    <kbd class="hidden sm:inline-block ml-1 px-1.5 py-0.5 text-[10px] bg-white/15 rounded">Esc</kbd>
+                </button>
+            </div>
+        </div>
+
+        <!-- Mensagem de status discreta (substitui qualquer alert) -->
+        <p id="status-bar" class="min-h-[1.25rem] mt-2 text-xs font-medium text-slate-500 dark:text-slate-400 text-center transition-opacity duration-200"></p>
+    </section>
+
+    <!-- Grade Principal dos 10 Botões do Soundboard -->
+    <main class="w-full max-w-5xl my-6 flex-1 flex items-center">
+        <div id="soundboard-grid" class="w-full grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4"></div>
+    </main>
+
+    <!-- Rodapé com atribuição das fontes -->
+    <footer class="w-full max-w-5xl text-center pt-4 pb-2">
+        <details class="inline-block text-xs text-slate-500 dark:text-slate-400">
+            <summary class="cursor-pointer hover:text-rose-600 dark:hover:text-rose-400 transition-colors font-medium select-none">
+                Créditos e links dos 10 áudios (BigSoundBank CC0 &amp; MyInstants)
+            </summary>
+            <div class="mt-2 p-3 rounded-xl bg-white/75 dark:bg-slate-800/75 border border-slate-200/80 dark:border-slate-700/80 text-left max-w-3xl mx-auto leading-relaxed">
+                <p class="mb-1.5">
+                    Este soundboard combina samples em licença <strong>CC0</strong> do
+                    <a href="https://bigsoundbank.com/" target="_blank" rel="noopener noreferrer" class="underline decoration-rose-400 hover:text-rose-600">BigSoundBank</a>
+                    e botões do
+                    <a href="https://www.myinstants.com/" target="_blank" rel="noopener noreferrer" class="underline decoration-rose-400 hover:text-rose-600">MyInstants</a>:
+                </p>
+                <ul id="credits-list" class="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-[11px]"></ul>
+            </div>
+        </details>
+    </footer>
+
+    <script>
+        /**
+         * MemeBoard da Alice — Engine do Soundboard (10 Memes)
+         * --------------------------------------------------------
+         * Gerencia 10 samples (BigSoundBank CC0 + MyInstants),
+         * com reprodução instantânea, controle de volume, modo sobreposição,
+         * atalhos de teclado (1-9, 0 e Esc), limite de duração sem loop,
+         * contadores salvos e fallback sintético.
+         */
+
+        (function () {
+            /**
+             * Catálogo dos 10 sons de meme do soundboard.
+             */
+            const SOUNDS = [
+                {
+                    id: 'fa',
+                    key: '1',
+                    name: 'FÁ!',
+                    subtitle: 'O clássico da Alice',
+                    emoji: '🗣️',
+                    featured: true,
+                    particles: ['FÁ!', 'FÁÁÁ!', '🔊'],
+                    bsbId: '3591',
+                    sourceTitle: '"Fah" Scream (#3591 — BigSoundBank CC0)',
+                    sourcePage: 'https://bigsoundbank.com/fah-scream-s3591.html',
+                    colors: { light: '#ff6b8b', main: '#f43f5e', dark: '#be123c', shadow: '#881337', glow: 'rgba(244,63,94,0.45)' },
+                    fallback: { type: 'sawtooth', startFreq: 349.23, endFreq: 220, duration: 0.38 }
+                },
+                {
+                    id: 'sound67',
+                    key: '2',
+                    name: '67!',
+                    subtitle: '67 Sound',
+                    emoji: '6️⃣',
+                    particles: ['67!', '🔥', '🔊'],
+                    embedUrl: 'https://www.myinstants.com/instant/67-sound-90775/embed/',
+                    sourceTitle: '67 sound (MyInstants)',
+                    sourcePage: 'https://www.myinstants.com/pt/instant/67-sound-90775/',
+                    colors: { light: '#fb923c', main: '#f97316', dark: '#c2410c', shadow: '#7c2d12', glow: 'rgba(249,115,22,0.45)' }
+                },
+                {
+                    id: 'badumtss',
+                    key: '3',
+                    name: 'BA DUM TSS',
+                    subtitle: 'Piada ruim',
+                    emoji: '🥁',
+                    particles: ['BA DUM!', 'TSS!', '🥁'],
+                    bsbId: '0433',
+                    sourceTitle: 'Battery Joke #1 (#0433 — BigSoundBank CC0)',
+                    sourcePage: 'https://bigsoundbank.com/battery-joke-s0433.html',
+                    colors: { light: '#fcd34d', main: '#f59e0b', dark: '#b45309', shadow: '#78350f', glow: 'rgba(245,158,11,0.45)' },
+                    fallback: { type: 'square', startFreq: 260, endFreq: 160, duration: 0.25 }
+                },
+                {
+                    id: 'mgs_alert',
+                    key: '4',
+                    name: 'ALERTA!',
+                    subtitle: 'Metal Gear Solid',
+                    emoji: '❗',
+                    particles: ['❗', 'ALERT!', '👀'],
+                    audioUrls: [
+                        'https://www.myinstants.com/media/sounds/tindeck_1.mp3',
+                        'https://www.myinstants.com/media/sounds/metalgearsolid.swf.mp3'
+                    ],
+                    sourceTitle: 'Metal Gear Solid Alert (MyInstants)',
+                    sourcePage: 'https://www.myinstants.com/pt/instant/metal-gear-solid-alert-sound-effect-44011/',
+                    colors: { light: '#34d399', main: '#10b981', dark: '#047857', shadow: '#064e3b', glow: 'rgba(16,185,129,0.45)' },
+                    fallback: { type: 'square', startFreq: 980, endFreq: 1420, duration: 0.28 }
+                },
+                {
+                    id: 'wilhelm',
+                    key: '5',
+                    name: 'WILHELM',
+                    subtitle: 'Grito lendário',
+                    emoji: '😱',
+                    particles: ['AAAAH!', '😱', '🎬'],
+                    bsbId: '0477',
+                    sourceTitle: 'Wilhelm Scream (#0477 — BigSoundBank CC0)',
+                    sourcePage: 'https://bigsoundbank.com/wilhelm-scream-s0477.html',
+                    colors: { light: '#38bdf8', main: '#0ea5e9', dark: '#0369a1', shadow: '#0c4a6e', glow: 'rgba(14,165,233,0.45)' },
+                    fallback: { type: 'sawtooth', startFreq: 680, endFreq: 320, duration: 0.4 }
+                },
+                {
+                    id: 'dundundun',
+                    key: '6',
+                    name: 'DUN DUN!',
+                    subtitle: 'Suspense dramático',
+                    emoji: '🎭',
+                    particles: ['DUN DUN!', 'DUNNN!', '😱'],
+                    audioUrls: [
+                        'https://www.myinstants.com/media/sounds/dun-dun-dun-sound-effect-brass_8nFBccR.mp3'
+                    ],
+                    sourceTitle: 'dun dun dunnnnnnnn (MyInstants)',
+                    sourcePage: 'https://www.myinstants.com/en/instant/dun-dun-dunnnnnnnn-68584/',
+                    colors: { light: '#a3e635', main: '#84cc16', dark: '#4d7c0f', shadow: '#365314', glow: 'rgba(132,204,22,0.45)' },
+                    fallback: { type: 'sawtooth', startFreq: 220, endFreq: 110, duration: 0.55 }
+                },
+                {
+                    id: 'shocked',
+                    key: '7',
+                    name: 'SHOCKED!',
+                    subtitle: 'Chocado!',
+                    emoji: '⚡',
+                    particles: ['CHOCADO!', '⚡', '😳'],
+                    embedUrl: 'https://www.myinstants.com/instant/shocked-sound-37548/embed/',
+                    sourceTitle: 'Shocked sound (MyInstants)',
+                    sourcePage: 'https://www.myinstants.com/en/instant/shocked-sound-37548/',
+                    colors: { light: '#a78bfa', main: '#8b5cf6', dark: '#6d28d9', shadow: '#4c1d95', glow: 'rgba(139,92,246,0.45)' }
+                },
+                {
+                    id: 'sad_violin',
+                    key: '8',
+                    name: 'SAD VIOLIN',
+                    subtitle: 'Violino triste',
+                    emoji: '🎻',
+                    particles: ['😢', '🎻', '💔'],
+                    audioUrls: [
+                        'https://www.myinstants.com/media/sounds/sad-violin.mp3'
+                    ],
+                    sourceTitle: 'meme violin / sad violin (MyInstants)',
+                    sourcePage: 'https://www.myinstants.com/en/instant/meme-violin-sad-violin-1460/',
+                    colors: { light: '#f472b6', main: '#ec4899', dark: '#be185d', shadow: '#831843', glow: 'rgba(236,72,153,0.45)' },
+                    fallback: { type: 'triangle', startFreq: 440, endFreq: 392, duration: 0.7 }
+                },
+                {
+                    id: 'beep',
+                    key: '9',
+                    name: 'BIP!',
+                    subtitle: 'Censurado!',
+                    emoji: '🤬',
+                    particles: ['BIIIIP!', '🤬', '🚫'],
+                    bsbId: '2943',
+                    sourceTitle: 'Censorship #3 (#2943 — BigSoundBank CC0)',
+                    sourcePage: 'https://bigsoundbank.com/censorship-3-s2943.html',
+                    colors: { light: '#22d3ee', main: '#06b6d4', dark: '#0e7490', shadow: '#164e63', glow: 'rgba(6,182,212,0.45)' },
+                    fallback: { type: 'sine', startFreq: 1000, endFreq: 1000, duration: 0.45 }
+                },
+                {
+                    id: 'crickets',
+                    key: '0',
+                    name: 'GRILOS...',
+                    subtitle: 'Silêncio total (3s)',
+                    emoji: '🦗',
+                    particles: ['CRI-CRI...', '🦗', '😶'],
+                    bsbId: '1020',
+                    maxDuration: 3.2,
+                    sourceTitle: 'Field cricket (#1020 — BigSoundBank CC0)',
+                    sourcePage: 'https://bigsoundbank.com/field-cricket-s1020.html',
+                    colors: { light: '#818cf8', main: '#6366f1', dark: '#4338ca', shadow: '#312e81', glow: 'rgba(99,102,241,0.45)' },
+                    fallback: { type: 'sine', startFreq: 4200, endFreq: 4100, duration: 0.25 }
+                }
+            ];
+
+            const STORAGE_KEY = 'memeboard_da_alice_stats_v1';
+            const OLD_FA_KEY = 'botao_fa_da_alice_count';
+
+            const gridEl = document.getElementById('soundboard-grid');
+            const totalCounterEl = document.getElementById('total-counter');
+            const statusBarEl = document.getElementById('status-bar');
+            const volumeSlider = document.getElementById('volume-slider');
+            const volumeLabel = document.getElementById('volume-label');
+            const overlapToggle = document.getElementById('overlap-toggle');
+            const stopAllBtn = document.getElementById('stop-all-btn');
+            const creditsListEl = document.getElementById('credits-list');
+
+            // Estado dos contadores individuais e instâncias ativas de áudio
+            let counts = {};
+            const activeAudios = new Set();
+            const audioTimers = new Map();
+            const padElements = new Map();
+            const padPlayingCounts = new Map();
+
+            // Carrega estatísticas salvas (migrando o contador antigo do Botão Fá, se existir)
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (saved) {
+                    counts = JSON.parse(saved) || {};
+                } else {
+                    const oldFa = parseInt(localStorage.getItem(OLD_FA_KEY) || '0', 10);
+                    if (!isNaN(oldFa) && oldFa > 0) {
+                        counts.fa = oldFa;
+                    }
+                }
+            } catch (err) {
+                counts = {};
+            }
+
+            /**
+             * Salva os contadores no localStorage.
+             */
+            function saveCounts() {
+                try {
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(counts));
+                } catch (err) {
+                    // Ignora caso o navegador bloqueie o localStorage
+                }
+            }
+
+            /**
+             * Atualiza o contador total exibido na barra de controles.
+             */
+            function updateTotalDisplay() {
+                const total = Object.values(counts).reduce((acc, val) => acc + (Number(val) || 0), 0);
+                if (totalCounterEl) {
+                    totalCounterEl.textContent = total.toLocaleString('pt-BR');
+                }
+            }
+
+            /**
+             * Exibe uma mensagem discreta na barra de status.
+             */
+            let statusTimer = null;
+            function setStatus(message, isWarning = false) {
+                if (!statusBarEl) return;
+                statusBarEl.textContent = message;
+                statusBarEl.classList.toggle('text-amber-600', isWarning);
+                statusBarEl.classList.toggle('dark:text-amber-400', isWarning);
+                statusBarEl.style.opacity = '1';
+
+                if (statusTimer) clearTimeout(statusTimer);
+                statusTimer = setTimeout(() => {
+                    statusBarEl.style.opacity = '0.7';
+                }, 3000);
+            }
+
+            /**
+             * Atualiza o estado visual de pulso de um pad enquanto o áudio toca.
+             */
+            function updatePadPlayingState(soundId, delta) {
+                const current = Math.max(0, (padPlayingCounts.get(soundId) || 0) + delta);
+                padPlayingCounts.set(soundId, current);
+                const btn = padElements.get(soundId);
+                if (btn) {
+                    btn.classList.toggle('is-playing', current > 0);
+                }
+            }
+
+            /**
+             * Gera partículas animadas ao disparar um botão.
+             */
+            function spawnParticles(btn, sound) {
+                const labels = sound.particles || [sound.emoji || '🔊'];
+                const count = 3;
+
+                for (let i = 0; i < count; i++) {
+                    const span = document.createElement('span');
+                    span.textContent = labels[Math.floor(Math.random() * labels.length)];
+                    span.className = 'pop-particle absolute left-1/2 top-1/2 z-20 font-display text-sm sm:text-base font-bold text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.45)] select-none';
+
+                    const angle = (-135 + Math.random() * 90) * (Math.PI / 180);
+                    const distance = 55 + Math.random() * 45;
+                    const tx = `${Math.round(Math.cos(angle) * distance)}px`;
+                    const ty = `${Math.round(Math.sin(angle) * distance)}px`;
+                    const rot = `${Math.round(-18 + Math.random() * 36)}deg`;
+
+                    span.style.setProperty('--tx', tx);
+                    span.style.setProperty('--ty', ty);
+                    span.style.setProperty('--rot', rot);
+
+                    btn.appendChild(span);
+                    setTimeout(() => span.remove(), 800);
+                }
+            }
+
+            /**
+             * Reproduz um som sintético simples via Web Audio API caso o áudio online falhe.
+             */
+            let audioCtx = null;
+            function playSynthesizedFallback(sound) {
+                try {
+                    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                    if (!AudioContextClass) return;
+                    if (!audioCtx) audioCtx = new AudioContextClass();
+                    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+                    const cfg = sound.fallback || { type: 'sine', startFreq: 440, endFreq: 220, duration: 0.3 };
+                    const now = audioCtx.currentTime;
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    const vol = Math.max(0.05, (Number(volumeSlider.value) / 100) * 0.35);
+
+                    osc.type = cfg.type;
+                    osc.frequency.setValueAtTime(cfg.startFreq, now);
+                    osc.frequency.exponentialRampToValueAtTime(Math.max(40, cfg.endFreq), now + cfg.duration);
+
+                    gain.gain.setValueAtTime(vol, now);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + cfg.duration);
+
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(now);
+                    osc.stop(now + cfg.duration);
+                } catch (err) {
+                    // Ignora erro caso Web Audio API não esteja disponível
+                }
+            }
+
+            /**
+             * Limpa temporizadores de fade-out / duração máxima associados a um áudio.
+             */
+            function clearAudioTimers(audio) {
+                const timers = audioTimers.get(audio);
+                if (timers) {
+                    timers.forEach((id) => {
+                        clearTimeout(id);
+                        clearInterval(id);
+                    });
+                    audioTimers.delete(audio);
+                }
+            }
+
+            /**
+             * Para todos os áudios atualmente em reprodução.
+             */
+            function stopAllSounds() {
+                activeAudios.forEach((audio) => {
+                    clearAudioTimers(audio);
+                    try {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    } catch (e) {
+                        // Ignora erro ao parar áudio
+                    }
+                });
+                activeAudios.clear();
+
+                padPlayingCounts.forEach((_, soundId) => {
+                    padPlayingCounts.set(soundId, 0);
+                    const btn = padElements.get(soundId);
+                    if (btn) btn.classList.remove('is-playing');
+                });
+
+                setStatus('Todos os sons foram interrompidos.');
+            }
+
+            /**
+             * Reproduz um som (suporta BigSoundBank CC0 e URLs diretas do MyInstants,
+             * sem loop e com suporte a duração máxima + fade-out suave).
+             */
+            function playSound(sound) {
+                if (!overlapToggle.checked) {
+                    stopAllSounds();
+                }
+
+                const urls = sound.audioUrls
+                    ? [...sound.audioUrls]
+                    : [
+                        `https://bigsoundbank.com/UPLOAD/mp3/${sound.bsbId}.mp3`,
+                        `https://bigsoundbank.com/UPLOAD/ogg/${sound.bsbId}.ogg`
+                    ];
+
+                const volume = Number(volumeSlider.value) / 100;
+
+                const startPlayback = (attemptIndex = 0) => {
+                    const url = urls[attemptIndex];
+                    const audio = new Audio(url);
+                    audio.loop = false;
+                    audio.volume = volume;
+                    activeAudios.add(audio);
+                    updatePadPlayingState(sound.id, 1);
+
+                    const cleanup = () => {
+                        clearAudioTimers(audio);
+                        if (activeAudios.has(audio)) {
+                            activeAudios.delete(audio);
+                            updatePadPlayingState(sound.id, -1);
+                        }
+                    };
+
+                    audio.addEventListener('ended', cleanup);
+                    audio.addEventListener('error', cleanup);
+
+                    const playPromise = audio.play();
+                    if (playPromise !== undefined) {
+                        playPromise
+                            .then(() => {
+                                setStatus(`Tocando: ${sound.name} (${sound.subtitle})`);
+
+                                // Se o som tiver duração máxima (ex.: Grilos), faz fade-out suave e encerra automaticamente
+                                if (sound.maxDuration && sound.maxDuration > 0) {
+                                    const fadeMs = 600;
+                                    const totalMs = sound.maxDuration * 1000;
+                                    const timers = [];
+
+                                    const fadeStartTimer = setTimeout(() => {
+                                        const initialVol = audio.volume;
+                                        const steps = 12;
+                                        let step = 0;
+                                        const fadeInterval = setInterval(() => {
+                                            step += 1;
+                                            audio.volume = Math.max(0, initialVol * (1 - step / steps));
+                                            if (step >= steps) {
+                                                clearInterval(fadeInterval);
+                                            }
+                                        }, fadeMs / steps);
+                                        timers.push(fadeInterval);
+                                    }, Math.max(0, totalMs - fadeMs));
+
+                                    const stopTimer = setTimeout(() => {
+                                        try {
+                                            audio.pause();
+                                            audio.currentTime = 0;
+                                        } catch (e) {
+                                            // Ignora erro ao encerrar áudio
+                                        }
+                                        cleanup();
+                                    }, totalMs);
+
+                                    timers.push(fadeStartTimer, stopTimer);
+                                    audioTimers.set(audio, timers);
+                                }
+                            })
+                            .catch(() => {
+                                cleanup();
+                                if (attemptIndex + 1 < urls.length) {
+                                    startPlayback(attemptIndex + 1);
+                                } else {
+                                    setStatus(`Áudio online de "${sound.name}" indisponível — usando efeito alternativo.`, true);
+                                    playSynthesizedFallback(sound);
+                                }
+                            });
+                    }
+                };
+
+                startPlayback(0);
+            }
+
+            /**
+             * Dispara um pad completo: incrementa contadores, anima e toca o áudio.
+             */
+            function triggerSound(sound) {
+                counts[sound.id] = (counts[sound.id] || 0) + 1;
+                saveCounts();
+                updateTotalDisplay();
+
+                const btn = padElements.get(sound.id);
+                if (btn) {
+                    const badge = btn.querySelector('[data-pad-count]');
+                    if (badge) {
+                        badge.textContent = counts[sound.id].toLocaleString('pt-BR');
+                    }
+                    spawnParticles(btn, sound);
+                }
+
+                playSound(sound);
+            }
+
+            /**
+             * Constrói os 10 pads na grade e preenche a lista de créditos.
+             */
+            function renderSoundboard() {
+                gridEl.innerHTML = '';
+                creditsListEl.innerHTML = '';
+
+                SOUNDS.forEach((sound) => {
+                    const currentCount = counts[sound.id] || 0;
+
+                    // Wrapper do botão (para manter a moldura estilo mesa de som)
+                    const wrapper = document.createElement('div');
+                    wrapper.className = 'relative p-2 rounded-3xl bg-white/70 dark:bg-slate-800/70 border border-slate-200/80 dark:border-slate-700/80 shadow-md flex';
+
+                    if (sound.embedUrl) {
+                        // Pad estilizado com o player oficial do MyInstants embutido
+                        const card = document.createElement('div');
+                        card.id = `pad-${sound.id}`;
+                        card.className = 'sound-pad relative w-full min-h-[148px] sm:min-h-[164px] rounded-2xl p-3 flex flex-col items-center justify-between text-white text-center overflow-hidden';
+
+                        card.style.setProperty('--pad-light', sound.colors.light);
+                        card.style.setProperty('--pad-main', sound.colors.main);
+                        card.style.setProperty('--pad-dark', sound.colors.dark);
+                        card.style.setProperty('--pad-shadow', sound.colors.shadow);
+                        card.style.setProperty('--pad-glow', sound.colors.glow);
+
+                        card.innerHTML = `
+                            <!-- Cabeçalho do pad embutido -->
+                            <div class="w-full flex items-center justify-between text-[11px] font-bold">
+                                <span class="px-2 py-0.5 rounded-lg bg-black/20 backdrop-blur-sm border border-white/20">
+                                    ${sound.emoji} ${sound.name}
+                                </span>
+                                <span class="px-2 py-0.5 rounded-lg bg-white/20 text-[10px] uppercase tracking-wider">
+                                    MyInstants
+                                </span>
+                            </div>
+
+                            <!-- Botão oficial embutido do MyInstants -->
+                            <div class="my-1 w-[112px] h-[104px] rounded-2xl bg-white/95 shadow-inner overflow-hidden flex items-start justify-center">
+                                <iframe
+                                    width="110"
+                                    height="200"
+                                    src="${sound.embedUrl}"
+                                    title="Botão de som ${sound.name} — MyInstants"
+                                    frameborder="0"
+                                    scrolling="no"
+                                    loading="lazy"
+                                    class="block -mt-1"
+                                ></iframe>
+                            </div>
+
+                            <!-- Subtítulo descritivo -->
+                            <span class="text-[11px] sm:text-xs font-medium text-white/90 leading-tight">
+                                ${sound.subtitle}
+                            </span>
+                        `;
+
+                        padElements.set(sound.id, card);
+                        wrapper.appendChild(card);
+                    } else {
+                        const button = document.createElement('button');
+                        button.type = 'button';
+                        button.id = `pad-${sound.id}`;
+                        button.setAttribute('aria-label', `Tocar ${sound.name}: ${sound.subtitle} (Tecla ${sound.key})`);
+                        button.className = 'sound-pad relative w-full min-h-[148px] sm:min-h-[164px] rounded-2xl p-3 sm:p-4 flex flex-col items-center justify-between text-white text-center focus:outline-none focus-visible:ring-4 focus-visible:ring-white/80 cursor-pointer overflow-visible';
+
+                        // Variáveis CSS exclusivas da cor de cada pad
+                        button.style.setProperty('--pad-light', sound.colors.light);
+                        button.style.setProperty('--pad-main', sound.colors.main);
+                        button.style.setProperty('--pad-dark', sound.colors.dark);
+                        button.style.setProperty('--pad-shadow', sound.colors.shadow);
+                        button.style.setProperty('--pad-glow', sound.colors.glow);
+
+                        button.innerHTML = `
+                            <!-- Barra superior do pad: atalho e contador individual -->
+                            <div class="w-full flex items-center justify-between text-[11px] font-bold">
+                                <span class="px-2 py-0.5 rounded-lg bg-black/20 backdrop-blur-sm border border-white/20">
+                                    ${sound.key}
+                                </span>
+                                ${sound.featured
+                                    ? '<span class="px-2 py-0.5 rounded-lg bg-white/25 text-white text-[10px] uppercase tracking-wider">★ Original</span>'
+                                    : ''
+                                }
+                                <span data-pad-count class="px-2 py-0.5 rounded-lg bg-black/20 backdrop-blur-sm tabular-nums">
+                                    ${currentCount.toLocaleString('pt-BR')}
+                                </span>
+                            </div>
+
+                            <!-- Conteúdo central: Emoji + Título -->
+                            <div class="my-1.5 flex flex-col items-center">
+                                <span class="text-3xl sm:text-4xl drop-shadow-sm leading-none mb-1.5" aria-hidden="true">${sound.emoji}</span>
+                                <span class="font-display text-xl sm:text-2xl font-bold tracking-tight leading-tight drop-shadow-[0_2px_2px_rgba(0,0,0,0.3)]">
+                                    ${sound.name}
+                                </span>
+                            </div>
+
+                            <!-- Subtítulo descritivo -->
+                            <span class="text-[11px] sm:text-xs font-medium text-white/90 leading-tight">
+                                ${sound.subtitle}
+                            </span>
+                        `;
+
+                        button.addEventListener('click', () => triggerSound(sound));
+                        padElements.set(sound.id, button);
+                        wrapper.appendChild(button);
+                    }
+
+                    gridEl.appendChild(wrapper);
+
+                    // Item de crédito no rodapé
+                    const li = document.createElement('li');
+                    li.innerHTML = `
+                        <strong>${sound.name}:</strong>
+                        <a href="${sound.sourcePage}" target="_blank" rel="noopener noreferrer" class="underline decoration-rose-400/60 hover:text-rose-600 dark:hover:text-rose-400">
+                            ${sound.sourceTitle}
+                        </a>
+                    `;
+                    creditsListEl.appendChild(li);
+                });
+
+                updateTotalDisplay();
+            }
+
+            // Controle de volume em tempo real (inclusive para sons já tocando)
+            volumeSlider.addEventListener('input', () => {
+                const pct = Number(volumeSlider.value);
+                volumeLabel.textContent = `${pct}%`;
+                const vol = pct / 100;
+                activeAudios.forEach((audio) => {
+                    audio.volume = vol;
+                });
+            });
+
+            // Botão Parar Tudo
+            stopAllBtn.addEventListener('click', stopAllSounds);
+
+            // Atalhos de teclado: teclas 1-9 e 0 disparam os 10 pads; Esc para tudo
+            window.addEventListener('keydown', (event) => {
+                if (event.repeat) return;
+
+                // Ignora se o foco estiver em algum input de texto
+                const tag = document.activeElement && document.activeElement.tagName;
+                if (tag === 'INPUT' && document.activeElement.type !== 'range' && document.activeElement.type !== 'checkbox') {
+                    return;
+                }
+
+                if (event.code === 'Escape') {
+                    event.preventDefault();
+                    stopAllSounds();
+                    return;
+                }
+
+                const matchedSound = SOUNDS.find((s) => s.key === event.key);
+                if (matchedSound) {
+                    event.preventDefault();
+                    if (matchedSound.embedUrl) {
+                        setStatus(`Clique diretamente no botão "${matchedSound.name}" (player MyInstants) para tocar.`);
+                        return;
+                    }
+                    const btn = padElements.get(matchedSound.id);
+                    if (btn) btn.classList.add('is-pressed');
+                    triggerSound(matchedSound);
+                }
+            });
+
+            window.addEventListener('keyup', (event) => {
+                const matchedSound = SOUNDS.find((s) => s.key === event.key);
+                if (matchedSound) {
+                    const btn = padElements.get(matchedSound.id);
+                    if (btn) btn.classList.remove('is-pressed');
+                }
+            });
+
+            // Inicializa a interface
+            renderSoundboard();
+        })();
+    </script>
+</body>
+</html>
